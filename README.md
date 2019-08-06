@@ -122,7 +122,7 @@ This procedure will install [HPN-SSH](https://www.psc.edu/hpn-ssh) (High Perform
 
 On hosts where you've installed this server and client per this procedure, the client is named `ssh-hamwan`.  To connect to a `sshd-hamwan` server (also installed per this procedure), run this command from a terminal:
 
-	ssh -o NoneSwitch=yes user@host
+	ssh -p 222 -o NoneSwitch=yes user@host
 		
 where user is the username on the target host and host is the target.
 
