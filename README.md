@@ -73,6 +73,10 @@ This procedure will install [HPN-SSH](https://www.psc.edu/hpn-ssh) (High Perform
 		
 	Save and close the file.
 
+-	As root, make a backup copy of open `/usr/local/etc/sshd_config`
+
+		sudo cp /usr/local/etc/sshd_config /usr/local/etc/sshd_config.original
+
 -	As root, open `/usr/local/etc/sshd_config` in a text editor.
 
 	Change this line:
@@ -93,8 +97,10 @@ This procedure will install [HPN-SSH](https://www.psc.edu/hpn-ssh) (High Perform
 
 	Save and close the file.
 
-## Server Operation
-		
+## (OPTIONAL) Server Operation
+	
+If you only need the ssh client, skip this section.  You should only enable this server on hosts that are connected to HamWAN!
+	
 - Enable the service
 
 	Run these commands in the Terminal:
