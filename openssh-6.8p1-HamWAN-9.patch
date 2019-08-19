@@ -1,0 +1,571 @@
+diff -ru a/cipher.c b/cipher.c
+--- a/cipher.c	2019-08-17 19:55:48.320437158 -0700
++++ b/cipher.c	2019-08-17 19:55:48.330437100 -0700
+@@ -244,7 +244,8 @@
+ 	for ((p = strsep(&cp, CIPHER_SEP)); p && *p != '\0';
+ 	    (p = strsep(&cp, CIPHER_SEP))) {
+ 		c = cipher_by_name(p);
+-		if (c == NULL || c->number != SSH_CIPHER_SSH2) {
++		if (c == NULL || (c->number != SSH_CIPHER_SSH2 && 
++					c->number != SSH_CIPHER_NONE)) {
+ 			free(cipher_list);
+ 			return 0;
+ 		}
+@@ -545,6 +546,7 @@
+ 
+ 	switch (c->number) {
+ #ifdef WITH_OPENSSL
++	case SSH_CIPHER_NONE:
+ 	case SSH_CIPHER_SSH2:
+ 	case SSH_CIPHER_DES:
+ 	case SSH_CIPHER_BLOWFISH:
+@@ -593,6 +595,7 @@
+ 
+ 	switch (c->number) {
+ #ifdef WITH_OPENSSL
++	case SSH_CIPHER_NONE:
+ 	case SSH_CIPHER_SSH2:
+ 	case SSH_CIPHER_DES:
+ 	case SSH_CIPHER_BLOWFISH:
+diff -ru a/config.h.in b/config.h.in
+--- a/config.h.in	2019-08-18 19:44:30.971570488 -0700
++++ b/config.h.in	2019-08-18 19:45:43.201117344 -0700
+@@ -1694,6 +1694,9 @@
+ /* Specify location of ssh.pid */
+ #undef _PATH_SSH_PIDDIR
+ 
++/* Specify path and name of pid */
++#undef _PATH_SSH_DAEMON_PID_FILE
++
+ /* Define if we don't have struct __res_state in resolv.h */
+ #undef __res_state
+ 
+diff -ru a/kex.c b/kex.c
+--- a/kex.c	2019-08-17 19:55:48.350436984 -0700
++++ b/kex.c	2019-08-17 19:55:48.360436926 -0700
+@@ -587,6 +587,10 @@
+ 	int nenc, nmac, ncomp;
+ 	u_int mode, ctos, need, dh_need, authlen;
+ 	int r, first_kex_follows;
++	int auth_flag;
++
++	auth_flag = ssh_packet_authentication_state();
++	debug ("AUTH STATE IS %d", auth_flag);
+ 
+ 	if ((r = kex_buf2prop(kex->my, NULL, &my)) != 0 ||
+ 	    (r = kex_buf2prop(kex->peer, &first_kex_follows, &peer)) != 0)
+@@ -635,6 +639,11 @@
+ 		if ((r = choose_comp(&newkeys->comp, cprop[ncomp],
+ 		    sprop[ncomp])) != 0)
+ 			goto out;
++      debug("REQUESTED ENC.NAME is '%s'", newkeys->enc.name);
++      if (strcmp(newkeys->enc.name, "none") == 0) {
++         debug("Requesting NONE. Authflag is %d", auth_flag);
++			fprintf(stderr, "WARNING: ENABLED NONE CIPHER\n");
++	   }
+ 		debug("kex: %s %s %s %s",
+ 		    ctos ? "client->server" : "server->client",
+ 		    newkeys->enc.name,
+diff -ru a/Makefile.in b/Makefile.in
+--- a/Makefile.in	2019-08-17 19:55:48.420436578 -0700
++++ b/Makefile.in	2019-08-18 20:12:55.371976438 -0700
+@@ -21,7 +21,9 @@
+ 
+ DESTDIR=
+ VPATH=@srcdir@
+-SSH_PROGRAM=@bindir@/ssh
++EXEEXT=-hamwan
++SSH_PROGRAM=@bindir@/ssh$(EXEEXT)
++PID_FILE=@piddir@/sshd$(EXEEXT).pid
+ ASKPASS_PROGRAM=$(libexecdir)/ssh-askpass
+ SFTP_SERVER=$(libexecdir)/sftp-server
+ SSH_KEYSIGN=$(libexecdir)/ssh-keysign
+@@ -38,6 +40,7 @@
+ 	-D_PATH_SSH_KEY_SIGN=\"$(SSH_KEYSIGN)\" \
+ 	-D_PATH_SSH_PKCS11_HELPER=\"$(SSH_PKCS11_HELPER)\" \
+ 	-D_PATH_SSH_PIDDIR=\"$(piddir)\" \
++	-D_PATH_SSH_DAEMON_PID_FILE=\"$(PID_FILE)\" \
+ 	-D_PATH_PRIVSEP_CHROOT_DIR=\"$(PRIVSEP_PATH)\"
+ 
+ CC=@CC@
+@@ -59,7 +62,6 @@
+ ENT=@ENT@
+ XAUTH_PATH=@XAUTH_PATH@
+ LDFLAGS=-L. -Lopenbsd-compat/ @LDFLAGS@
+-EXEEXT=@EXEEXT@
+ MANFMT=@MANFMT@
+ 
+ TARGETS=ssh$(EXEEXT) sshd$(EXEEXT) ssh-add$(EXEEXT) ssh-keygen$(EXEEXT) ssh-keyscan${EXEEXT} ssh-keysign${EXEEXT} ssh-pkcs11-helper$(EXEEXT) ssh-agent$(EXEEXT) scp$(EXEEXT) sftp-server$(EXEEXT) sftp$(EXEEXT)
+@@ -130,7 +132,7 @@
+ 	-e 's|/etc/ssh/ssh_host_dsa_key|$(sysconfdir)/ssh_host_dsa_key|g' \
+ 	-e 's|/etc/ssh/ssh_host_rsa_key|$(sysconfdir)/ssh_host_rsa_key|g' \
+ 	-e 's|/etc/ssh/ssh_host_ed25519_key|$(sysconfdir)/ssh_host_ed25519_key|g' \
+-	-e 's|/var/run/sshd.pid|$(piddir)/sshd.pid|g' \
++	-e 's|/var/run/sshd$(EXEXT).pid|$(piddir)/sshd$(EXEXT).pid|g' \
+ 	-e 's|/etc/moduli|$(sysconfdir)/moduli|g' \
+ 	-e 's|/etc/ssh/moduli|$(sysconfdir)/moduli|g' \
+ 	-e 's|/etc/ssh/sshrc|$(sysconfdir)/sshrc|g' \
+@@ -291,15 +293,11 @@
+ install-nosysconf: $(CONFIGFILES) $(MANPAGES) $(TARGETS) install-files
+ 
+ check-config:
+-	-$(DESTDIR)$(sbindir)/sshd -t -f $(DESTDIR)$(sysconfdir)/sshd_config
++	-$(DESTDIR)$(sbindir)/sshd$(EXEEXT) -t -f $(DESTDIR)$(sysconfdir)/sshd_config
+ 
+ install-files:
+ 	$(srcdir)/mkinstalldirs $(DESTDIR)$(bindir)
+ 	$(srcdir)/mkinstalldirs $(DESTDIR)$(sbindir)
+-	$(srcdir)/mkinstalldirs $(DESTDIR)$(mandir)
+-	$(srcdir)/mkinstalldirs $(DESTDIR)$(mandir)/$(mansubdir)1
+-	$(srcdir)/mkinstalldirs $(DESTDIR)$(mandir)/$(mansubdir)5
+-	$(srcdir)/mkinstalldirs $(DESTDIR)$(mandir)/$(mansubdir)8
+ 	$(srcdir)/mkinstalldirs $(DESTDIR)$(libexecdir)
+ 	(umask 022 ; $(srcdir)/mkinstalldirs $(DESTDIR)$(PRIVSEP_PATH))
+ 	$(INSTALL) -m 0755 $(STRIP_OPT) ssh$(EXEEXT) $(DESTDIR)$(bindir)/ssh$(EXEEXT)
+@@ -313,6 +311,14 @@
+ 	$(INSTALL) -m 0755 $(STRIP_OPT) ssh-pkcs11-helper$(EXEEXT) $(DESTDIR)$(SSH_PKCS11_HELPER)$(EXEEXT)
+ 	$(INSTALL) -m 0755 $(STRIP_OPT) sftp$(EXEEXT) $(DESTDIR)$(bindir)/sftp$(EXEEXT)
+ 	$(INSTALL) -m 0755 $(STRIP_OPT) sftp-server$(EXEEXT) $(DESTDIR)$(SFTP_SERVER)$(EXEEXT)
++	-rm -f $(DESTDIR)$(bindir)/slogin$(EXEEXT)
++	ln -s ./ssh$(EXEEXT) $(DESTDIR)$(bindir)/slogin$(EXEEXT)
++
++install-info:
++	$(srcdir)/mkinstalldirs $(DESTDIR)$(mandir)
++	$(srcdir)/mkinstalldirs $(DESTDIR)$(mandir)/$(mansubdir)1
++	$(srcdir)/mkinstalldirs $(DESTDIR)$(mandir)/$(mansubdir)5
++	$(srcdir)/mkinstalldirs $(DESTDIR)$(mandir)/$(mansubdir)8
+ 	$(INSTALL) -m 644 ssh.1.out $(DESTDIR)$(mandir)/$(mansubdir)1/ssh.1
+ 	$(INSTALL) -m 644 scp.1.out $(DESTDIR)$(mandir)/$(mansubdir)1/scp.1
+ 	$(INSTALL) -m 644 ssh-add.1.out $(DESTDIR)$(mandir)/$(mansubdir)1/ssh-add.1
+@@ -327,8 +333,6 @@
+ 	$(INSTALL) -m 644 sftp-server.8.out $(DESTDIR)$(mandir)/$(mansubdir)8/sftp-server.8
+ 	$(INSTALL) -m 644 ssh-keysign.8.out $(DESTDIR)$(mandir)/$(mansubdir)8/ssh-keysign.8
+ 	$(INSTALL) -m 644 ssh-pkcs11-helper.8.out $(DESTDIR)$(mandir)/$(mansubdir)8/ssh-pkcs11-helper.8
+-	-rm -f $(DESTDIR)$(bindir)/slogin
+-	ln -s ./ssh$(EXEEXT) $(DESTDIR)$(bindir)/slogin
+ 	-rm -f $(DESTDIR)$(mandir)/$(mansubdir)1/slogin.1
+ 	ln -s ./ssh.1 $(DESTDIR)$(mandir)/$(mansubdir)1/slogin.1
+ 
+@@ -359,41 +363,41 @@
+ 
+ host-key: ssh-keygen$(EXEEXT)
+ 	@if [ -z "$(DESTDIR)" ] ; then \
+-		if [ -f "$(sysconfdir)/ssh_host_key" ] ; then \
+-			echo "$(sysconfdir)/ssh_host_key already exists, skipping." ; \
+-		else \
+-			./ssh-keygen -t rsa1 -f $(sysconfdir)/ssh_host_key -N "" ; \
+-		fi ; \
+-		if [ -f $(sysconfdir)/ssh_host_dsa_key ] ; then \
+-			echo "$(sysconfdir)/ssh_host_dsa_key already exists, skipping." ; \
+-		else \
+-			./ssh-keygen -t dsa -f $(sysconfdir)/ssh_host_dsa_key -N "" ; \
+-		fi ; \
+-		if [ -f $(sysconfdir)/ssh_host_rsa_key ] ; then \
+-			echo "$(sysconfdir)/ssh_host_rsa_key already exists, skipping." ; \
+-		else \
+-			./ssh-keygen -t rsa -f $(sysconfdir)/ssh_host_rsa_key -N "" ; \
+-		fi ; \
++#		if [ -f "$(sysconfdir)/ssh_host_key" ] ; then \
++#			echo "$(sysconfdir)/ssh_host_key already exists, skipping." ; \
++#		else \
++#			./ssh-keygen$(EXEEXT) -t rsa1 -f $(sysconfdir)/ssh_host_key -N "" ; \
++#		fi ; \
++#		if [ -f $(sysconfdir)/ssh_host_dsa_key ] ; then \
++#			echo "$(sysconfdir)/ssh_host_dsa_key already exists, skipping." ; \
++#		else \
++#			./ssh-keygen$(EXEEXT) -t dsa -f $(sysconfdir)/ssh_host_dsa_key -N "" ; \
++#		fi ; \
++#		if [ -f $(sysconfdir)/ssh_host_rsa_key ] ; then \
++#			echo "$(sysconfdir)/ssh_host_rsa_key already exists, skipping." ; \
++#		else \
++#			./ssh-keygen$(EXEEXT) -t rsa -f $(sysconfdir)/ssh_host_rsa_key -N "" ; \
++#		fi ; \
+ 		if [ -f $(sysconfdir)/ssh_host_ed25519_key ] ; then \
+ 			echo "$(sysconfdir)/ssh_host_ed25519_key already exists, skipping." ; \
+ 		else \
+-			./ssh-keygen -t ed25519 -f $(sysconfdir)/ssh_host_ed25519_key -N "" ; \
+-		fi ; \
+-		if [ -z "@COMMENT_OUT_ECC@" ] ; then \
+-		    if [ -f $(sysconfdir)/ssh_host_ecdsa_key ] ; then \
+-			echo "$(sysconfdir)/ssh_host_ecdsa_key already exists, skipping." ; \
+-		    else \
+-			./ssh-keygen -t ecdsa -f $(sysconfdir)/ssh_host_ecdsa_key -N "" ; \
+-		    fi ; \
++			./ssh-keygen$(EXEEXT) -t ed25519 -f $(sysconfdir)/ssh_host_ed25519_key -N "" ; \
+ 		fi ; \
++#		if [ -z "@COMMENT_OUT_ECC@" ] ; then \
++#		    if [ -f $(sysconfdir)/ssh_host_ecdsa_key ] ; then \
++#			echo "$(sysconfdir)/ssh_host_ecdsa_key already exists, skipping." ; \
++#		    else \
++#			./ssh-keygen$(EXEEXT) -t ecdsa -f $(sysconfdir)/ssh_host_ecdsa_key -N "" ; \
++#		    fi ; \
++#		fi ; \
+ 	fi ;
+ 
+ host-key-force: ssh-keygen$(EXEEXT)
+-	./ssh-keygen -t rsa1 -f $(DESTDIR)$(sysconfdir)/ssh_host_key -N ""
+-	./ssh-keygen -t dsa -f $(DESTDIR)$(sysconfdir)/ssh_host_dsa_key -N ""
+-	./ssh-keygen -t rsa -f $(DESTDIR)$(sysconfdir)/ssh_host_rsa_key -N ""
+-	./ssh-keygen -t ed25519 -f $(DESTDIR)$(sysconfdir)/ssh_host_ed25519_key -N ""
+-	test -z "@COMMENT_OUT_ECC@" && ./ssh-keygen -t ecdsa -f $(DESTDIR)$(sysconfdir)/ssh_host_ecdsa_key -N ""
++#	./ssh-keygen$(EXEEXT)-t rsa1 -f $(DESTDIR)$(sysconfdir)/ssh_host_key -N ""
++#	./ssh-keygen$(EXEEXT)  -t dsa -f $(DESTDIR)$(sysconfdir)/ssh_host_dsa_key -N ""
++#	./ssh-keygen$(EXEEXT) -t rsa -f $(DESTDIR)$(sysconfdir)/ssh_host_rsa_key -N ""
++	./ssh-keygen$(EXEEXT) -t ed25519 -f $(DESTDIR)$(sysconfdir)/ssh_host_ed25519_key -N ""
++#	test -z "@COMMENT_OUT_ECC@" && ./ssh-keygen$(EXEEXT) -t ecdsa -f $(DESTDIR)$(sysconfdir)/ssh_host_ecdsa_key -N ""
+ 
+ uninstallall:	uninstall
+ 	-rm -f $(DESTDIR)$(sysconfdir)/ssh_config
+@@ -407,7 +411,7 @@
+ 	-rmdir $(DESTDIR)$(libexecdir)
+ 
+ uninstall:
+-	-rm -f $(DESTDIR)$(bindir)/slogin
++	-rm -f $(DESTDIR)$(bindir)/slogin$(EXEEXT)
+ 	-rm -f $(DESTDIR)$(bindir)/ssh$(EXEEXT)
+ 	-rm -f $(DESTDIR)$(bindir)/scp$(EXEEXT)
+ 	-rm -f $(DESTDIR)$(bindir)/ssh-add$(EXEEXT)
+diff -ru a/myproposal.h b/myproposal.h
+--- a/myproposal.h	2019-08-17 19:55:48.450436405 -0700
++++ b/myproposal.h	2019-08-17 19:55:48.460436347 -0700
+@@ -171,6 +171,9 @@
+ #define	KEX_DEFAULT_COMP	"none,zlib@openssh.com,zlib"
+ #define	KEX_DEFAULT_LANG	""
+ 
++#define KEX_ENCRYPT_INCLUDE_NONE KEX_SERVER_ENCRYPT \
++   ",none"
++
+ #define KEX_CLIENT \
+ 	KEX_CLIENT_KEX, \
+ 	KEX_DEFAULT_PK_ALG, \
+diff -ru a/packet.c b/packet.c
+--- a/packet.c	2019-08-17 19:55:48.480436231 -0700
++++ b/packet.c	2019-08-17 19:55:48.490436173 -0700
+@@ -2199,6 +2199,14 @@
+ 	}
+ }
+ 
++/* this supports the forced rekeying required for the NONE cipher */
++int rekey_requested = 0; 
++void
++ssh_packet_request_rekeying(void)
++{
++		     rekey_requested = 1; 
++}
++
+ #define MAX_PACKETS	(1U<<31)
+ int
+ ssh_packet_need_rekeying(struct ssh *ssh)
+@@ -2207,6 +2215,11 @@
+ 
+ 	if (ssh->compat & SSH_BUG_NOREKEY)
+ 		return 0;
++   if (rekey_requested == 1)
++   {
++      rekey_requested = 0; 
++      return 1;
++   }    
+ 	return
+ 	    (state->p_send.packets > MAX_PACKETS) ||
+ 	    (state->p_read.packets > MAX_PACKETS) ||
+@@ -2218,6 +2231,14 @@
+ 		 state->rekey_interval <= monotime());
+ }
+ 
++int
++ssh_packet_authentication_state(void)
++{
++	struct ssh *ssh = active_state;
++	struct session_state *state = ssh->state;
++   return(state->after_authentication);
++}
++
+ void
+ ssh_packet_set_rekey_limits(struct ssh *ssh, u_int32_t bytes, time_t seconds)
+ {
+diff -ru a/packet.h b/packet.h
+--- a/packet.h	2019-08-17 19:55:48.510436057 -0700
++++ b/packet.h	2019-08-17 19:55:48.520435999 -0700
+@@ -139,6 +139,10 @@
+ int	 ssh_packet_set_maxsize(struct ssh *, u_int);
+ u_int	 ssh_packet_get_maxsize(struct ssh *);
+ 
++/* for forced packet rekeying post auth */
++void  ssh_packet_request_rekeying(void);
++int   ssh_packet_authentication_state(void);
++
+ int	 ssh_packet_get_state(struct ssh *, struct sshbuf *);
+ int	 ssh_packet_set_state(struct ssh *, struct sshbuf *);
+ 
+diff -ru a/pathnames.h b/pathnames.h
+--- a/pathnames.h	2019-08-18 18:16:07.709600062 -0700
++++ b/pathnames.h	2019-08-18 19:40:16.153151143 -0700
+@@ -53,7 +53,9 @@
+  * The process id of the daemon listening for connections is saved here to
+  * make it easier to kill the correct daemon when necessary.
+  */
++#ifndef _PATH_SSH_DAEMON_PID_FILE
+ #define _PATH_SSH_DAEMON_PID_FILE	_PATH_SSH_PIDDIR "/sshd.pid"
++#endif
+ 
+ /*
+  * The directory in user's home directory in which the files reside. The
+diff -ru a/readconf.c b/readconf.c
+--- a/readconf.c	2019-08-17 19:55:48.550435826 -0700
++++ b/readconf.c	2019-08-17 19:55:48.560435768 -0700
+@@ -151,6 +151,7 @@
+ 	oSendEnv, oControlPath, oControlMaster, oControlPersist,
+ 	oHashKnownHosts,
+ 	oTunnel, oTunnelDevice, oLocalCommand, oPermitLocalCommand,
++	oNoneEnabled, oNoneSwitch,
+ 	oVisualHostKey, oUseRoaming,
+ 	oKexAlgorithms, oIPQoS, oRequestTTY, oIgnoreUnknown, oProxyUseFdpass,
+ 	oCanonicalDomains, oCanonicalizeHostname, oCanonicalizeMaxDots,
+@@ -263,6 +264,8 @@
+ 	{ "kexalgorithms", oKexAlgorithms },
+ 	{ "ipqos", oIPQoS },
+ 	{ "requesttty", oRequestTTY },
++	{ "noneenabled", oNoneEnabled },
++	{ "noneswitch", oNoneSwitch },
+ 	{ "proxyusefdpass", oProxyUseFdpass },
+ 	{ "canonicaldomains", oCanonicalDomains },
+ 	{ "canonicalizefallbacklocal", oCanonicalizeFallbackLocal },
+@@ -904,6 +907,28 @@
+ 		intptr = &options->check_host_ip;
+ 		goto parse_flag;
+ 
++   case oNoneEnabled:
++      intptr = &options->none_enabled;
++      goto parse_flag;
++														 
++   /* we check to see if the command comes from the */
++   /* command line or not. If it does then enable it */
++	/* otherwise fail. NONE should never be a default configuration */
++	/*case oNoneSwitch:
++		if(strcmp(filename,"command-line") == 0) { 
++			intptr = &options->none_switch;
++			goto parse_flag;
++		} else {
++			error("NoneSwitch is found in %.200s.\nYou may only use this configuration option from the command line", filename);
++			error("Continuing...");
++			debug("NoneSwitch directive found in %.200s.", filename);
++			return 0;
++		}
++	*/
++	case oNoneSwitch:
++		intptr = &options->none_switch;
++		goto parse_flag;
++
+ 	case oVerifyHostKeyDNS:
+ 		intptr = &options->verify_host_key_dns;
+ 		multistate_ptr = multistate_yesnoask;
+@@ -1665,6 +1690,8 @@
+ 	options->ip_qos_interactive = -1;
+ 	options->ip_qos_bulk = -1;
+ 	options->request_tty = -1;
++	options->none_switch = -1;
++	options->none_enabled = -1;
+ 	options->proxy_use_fdpass = -1;
+ 	options->ignored_unknown = NULL;
+ 	options->num_canonical_domains = 0;
+@@ -1819,6 +1846,10 @@
+ 		options->server_alive_interval = 0;
+ 	if (options->server_alive_count_max == -1)
+ 		options->server_alive_count_max = 3;
++	if (options->none_switch == -1)
++		options->none_switch = 0; 
++	if (options->none_enabled == -1)
++		options->none_enabled = 0; 
+ 	if (options->control_master == -1)
+ 		options->control_master = 0;
+ 	if (options->control_persist == -1) {
+diff -ru a/readconf.h b/readconf.h
+--- a/readconf.h	2019-08-17 19:55:48.580435652 -0700
++++ b/readconf.h	2019-08-17 19:55:48.590435594 -0700
+@@ -106,7 +106,10 @@
+ 
+ 	int	enable_ssh_keysign;
+ 	int64_t rekey_limit;
++   int	none_switch;    /* Use none cipher */
++	int	none_enabled;   /* Allow none to be used */
+ 	int	rekey_interval;
++
+ 	int	no_host_authentication_for_localhost;
+ 	int	identities_only;
+ 	int	server_alive_interval;
+diff -ru a/servconf.c b/servconf.c
+--- a/servconf.c	2019-08-17 19:55:48.610435478 -0700
++++ b/servconf.c	2019-08-17 19:55:48.620435420 -0700
+@@ -159,6 +159,7 @@
+ 	options->revoked_keys_file = NULL;
+ 	options->trusted_user_ca_keys = NULL;
+ 	options->authorized_principals_file = NULL;
++	options->none_enabled = -1;
+ 	options->ip_qos_interactive = -1;
+ 	options->ip_qos_bulk = -1;
+ 	options->version_addendum = NULL;
+@@ -321,6 +322,8 @@
+ 	}
+ 	if (options->permit_tun == -1)
+ 		options->permit_tun = SSH_TUNMODE_NO;
++   if (options->none_enabled == -1)  
++	   options->none_enabled = 0; 
+ 	if (options->ip_qos_interactive == -1)
+ 		options->ip_qos_interactive = IPTOS_LOWDELAY;
+ 	if (options->ip_qos_bulk == -1)
+@@ -398,7 +401,7 @@
+ 	sRevokedKeys, sTrustedUserCAKeys, sAuthorizedPrincipalsFile,
+ 	sKexAlgorithms, sIPQoS, sVersionAddendum,
+ 	sAuthorizedKeysCommand, sAuthorizedKeysCommandUser,
+-	sAuthenticationMethods, sHostKeyAgent, sPermitUserRC,
++	sAuthenticationMethods, sNoneEnabled, sHostKeyAgent, sPermitUserRC,
+ 	sStreamLocalBindMask, sStreamLocalBindUnlink,
+ 	sAllowStreamLocalForwarding, sFingerprintHash,
+ 	sDeprecated, sUnsupported
+@@ -524,6 +527,7 @@
+ 	{ "revokedkeys", sRevokedKeys, SSHCFG_ALL },
+ 	{ "trustedusercakeys", sTrustedUserCAKeys, SSHCFG_ALL },
+ 	{ "authorizedprincipalsfile", sAuthorizedPrincipalsFile, SSHCFG_ALL },
++	{ "noneenabled", sNoneEnabled, SSHCFG_ALL },
+ 	{ "kexalgorithms", sKexAlgorithms, SSHCFG_GLOBAL },
+ 	{ "ipqos", sIPQoS, SSHCFG_ALL },
+ 	{ "authorizedkeyscommand", sAuthorizedKeysCommand, SSHCFG_ALL },
+@@ -1108,6 +1112,10 @@
+ 		intptr = &options->ignore_user_known_hosts;
+ 		goto parse_flag;
+ 
++   case sNoneEnabled:
++		intptr = &options->none_enabled;
++		goto parse_flag;
++
+ 	case sRhostsRSAAuthentication:
+ 		intptr = &options->rhosts_rsa_authentication;
+ 		goto parse_flag;
+diff -ru a/servconf.h b/servconf.h
+--- a/servconf.h	2019-08-17 19:55:48.650435246 -0700
++++ b/servconf.h	2019-08-17 19:55:48.650435246 -0700
+@@ -169,6 +169,8 @@
+ 
+ 	int	use_pam;		/* Enable auth via PAM */
+ 
++	int   none_enabled;     /* enable NONE cipher switch */
++
+ 	int	permit_tun;
+ 
+ 	int	num_permitted_opens;
+diff -ru a/ssh_config b/ssh_config
+--- a/ssh_config	2019-08-17 20:12:25.753899773 -0700
++++ b/ssh_config	2019-08-18 08:55:11.526921458 -0700
+@@ -17,7 +17,7 @@
+ # list of available options, their meanings and defaults, please see the
+ # ssh_config(5) man page.
+ 
+-# Host *
++Host *
+ #   ForwardAgent no
+ #   ForwardX11 no
+ #   RhostsRSAAuthentication no
+@@ -34,7 +34,7 @@
+ #   IdentityFile ~/.ssh/identity
+ #   IdentityFile ~/.ssh/id_rsa
+ #   IdentityFile ~/.ssh/id_dsa
+-#   Port 22
++   Port 222
+ #   Protocol 2,1
+ #   Cipher 3des
+ #   Ciphers aes128-ctr,aes192-ctr,aes256-ctr,arcfour256,arcfour128,aes128-cbc,3des-cbc
+@@ -46,3 +46,5 @@
+ #   VisualHostKey no
+ #   ProxyCommand ssh -q -W %h:%p gateway.example.com
+ #   RekeyLimit 1G 1h
++	NoneEnabled yes
++	NoneSwitch yes
+diff -ru a/sshconnect2.c b/sshconnect2.c
+--- a/sshconnect2.c	2019-08-17 19:55:48.710434899 -0700
++++ b/sshconnect2.c	2019-08-17 19:55:48.720434841 -0700
+@@ -81,6 +81,11 @@
+ extern char *server_version_string;
+ extern Options options;
+ 
++/* tty_flag is set in ssh.c. use this in ssh_userauth2 */
++/* if it is set then prevent the switch to the null cipher */
++
++extern int tty_flag;
++
+ /*
+  * SSH2 key exchange
+  */
+@@ -366,6 +371,8 @@
+ ssh_userauth2(const char *local_user, const char *server_user, char *host,
+     Sensitive *sensitive)
+ {
++	char *myproposal[PROPOSAL_MAX] = { KEX_CLIENT };
++	struct ssh *ssh = active_state;
+ 	Authctxt authctxt;
+ 	int type;
+ 
+@@ -423,6 +430,20 @@
+ 	pubkey_cleanup(&authctxt);
+ 	dispatch_range(SSH2_MSG_USERAUTH_MIN, SSH2_MSG_USERAUTH_MAX, NULL);
+ 
++   /* if the user wants to use the none cipher do it */
++   /* post authentication and only if the right conditions are met */
++   /* both of the NONE commands must be true and there must be no */
++   /* tty allocated */
++   if ((options.none_switch == 1) && (options.none_enabled == 1))
++   {    
++      debug("Requesting none rekeying...");
++      myproposal[PROPOSAL_ENC_ALGS_STOC] = "none";
++      myproposal[PROPOSAL_ENC_ALGS_CTOS] = "none";
++      kex_prop2buf(ssh->kex->my,myproposal);
++      ssh_packet_request_rekeying();
++      fprintf(stderr, "WARNING: ENABLED NONE CIPHER\n");
++   }    
++
+ 	debug("Authentication succeeded (%s).", authctxt.method->name);
+ }
+ 
+diff -ru a/sshd.c b/sshd.c
+--- a/sshd.c	2019-08-17 19:55:48.770434551 -0700
++++ b/sshd.c	2019-08-17 19:55:48.780434494 -0700
+@@ -2531,6 +2531,10 @@
+ 	if (options.ciphers != NULL) {
+ 		myproposal[PROPOSAL_ENC_ALGS_CTOS] =
+ 		myproposal[PROPOSAL_ENC_ALGS_STOC] = options.ciphers;
++   } else if (options.none_enabled == 1) { 
++	     debug ("WARNING: None cipher enabled");
++		  myproposal[PROPOSAL_ENC_ALGS_CTOS] =
++		  myproposal[PROPOSAL_ENC_ALGS_STOC] = KEX_ENCRYPT_INCLUDE_NONE;
+ 	}
+ 	myproposal[PROPOSAL_ENC_ALGS_CTOS] =
+ 	    compat_cipher_proposal(myproposal[PROPOSAL_ENC_ALGS_CTOS]);
+diff -ru a/sshd_config b/sshd_config
+--- a/sshd_config	2019-08-17 19:55:48.740434725 -0700
++++ b/sshd_config	2019-08-18 10:30:11.831988260 -0700
+@@ -10,7 +10,7 @@
+ # possible, but leave them commented.  Uncommented options override the
+ # default value.
+ 
+-#Port 22
++Port 222
+ #AddressFamily any
+ #ListenAddress 0.0.0.0
+ #ListenAddress ::
+@@ -25,6 +25,7 @@
+ #HostKey /etc/ssh/ssh_host_dsa_key
+ #HostKey /etc/ssh/ssh_host_ecdsa_key
+ #HostKey /etc/ssh/ssh_host_ed25519_key
++HostKey /usr/local/etc/ssh-hamwan/ssh_host_ed25519_key
+ 
+ # Lifetime and size of ephemeral version 1 server key
+ #KeyRegenerationInterval 1h
+@@ -125,6 +126,9 @@
+ # override default of no subsystems
+ Subsystem	sftp	/usr/libexec/sftp-server
+ 
++# allow the use of the none cipher
++NoneEnabled yes
++
+ # Example of overriding settings on a per-user basis
+ #Match User anoncvs
+ #	X11Forwarding no
