@@ -125,6 +125,8 @@ The patch modifies various files in the OpenSSH source code to allow no encrypti
 		sudo apt-get update
 		sudo apt-get -y install git
 		sudo apt-get -y build-dep openssh
+		sudo groupadd sshd
+		sudo useradd -g sshd -c 'sshd privsep' -d /var/empty -s /bin/false sshd 
 		rm -rf ssh-hamwan
 		git clone https://github.com/AG7GN/ssh-hamwan
 		cd ssh-hamwan
