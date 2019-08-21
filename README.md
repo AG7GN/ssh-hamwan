@@ -11,7 +11,7 @@ By design, Secure Shell (SSH) uses encryption to prevent prying eyes from seeing
 
 __IMPORTANT:__ The __ssh-hamwan__ applications should only be used when the traffic is carried on frequencies that are subject to FCC Part 97 rules.  The standard SSH server and client installed and usually enabled by default on the Raspberry Pi and other Linux/UNIX hosts remains fully operational with all of the latest encryption features enabled.  Use the standard SSH server and client when your traffic is carried over the Internet or your local network and not over Part 97 controlled frequencies.
 
-The __ssh-hamwan__ build of OpenSSH differs from a typical OpenSSH installation in the following ways:
+__ssh-hamwan__ OpenSSH differs from a typical OpenSSH installation in the following ways:
 
 - It is built without __OpenSSL__ to make it more portable.
 - The client binaries are named `ssh-hamwan`, `scp-hamwan`, `sftp-hamwan` and are located in `/usr/local/bin`.  
