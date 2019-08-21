@@ -3,9 +3,9 @@ Version 20190820
 
 ## Background
 
-HamWAN uses frequencies that are allocated for use by Amateur Radio operators.  As such, the use of those frequencies is subject to FCC Part 97.  Part 97 prohibits passing "messages encoded for the purpose of obscuring their meaning".  This means that you cannot use the privacy features of cryptography because it would "obscure the message".  This does not ban cryptography on ham frequencies outright, though.  The [HamWAN web site](http://hamwan.org) has a nice summary of how Part 97 affects HamWAN entitled [Internet and Part 97](http://hamwan.org/Administrative/Internet%20and%20Part%2097.html).
+HamWAN uses frequencies that are allocated for use by Amateur Radio operators.  As such, the use of those frequencies is subject to FCC Part 97 rules.  Part 97 prohibits passing "messages encoded for the purpose of obscuring their meaning".  This means that you cannot use the privacy features of cryptography because it would "obscure the message".  This does not ban cryptography on ham frequencies outright, though.  The [HamWAN web site](http://hamwan.org) has a nice summary of how Part 97 affects HamWAN entitled [Internet and Part 97](http://hamwan.org/Administrative/Internet%20and%20Part%2097.html).
 
-By design, Secure Shell (SSH) uses encryption to prevent prying eyes from seeing traffic between hosts.  SSH is commonly used to manage hosts and other end systems.  This document describes how to install __ssh-hamwan__, an OpenSSH server and client, on a Raspberry Pi.  It allows SSH to be used without encrypting the traffic.  __ssh-hamwan__ can operate concurrently with the regular SSH client and server that's installed and usually enabled on most Linux hosts including the Pi.
+Secure Shell (SSH) is commonly used to remotely manage end and intermediate systems.  By design, SSH uses encryption to prevent prying eyes from seeing traffic between hosts.  This document describes how to install __ssh-hamwan__, an OpenSSH server and client, on a Raspberry Pi.  It allows SSH to be used without encrypting the traffic.  __ssh-hamwan__ can operate concurrently with the regular SSH client and server that's installed and usually enabled on most Linux hosts including the Pi.
 
 ## Notes
 
@@ -26,7 +26,7 @@ __ssh-hamwan__ differs from a typical OpenSSH installation in the following ways
 - Raspberry Pi 3B or 3B+ or 4 running Raspbian Stretch or Buster
 - Pi must be connected to the Internet (NOT via HamWAN for this installation procedure)
 - Familiarity with basic Linux commands in the Terminal application
-- User __pi__ has passwordless sudo privileges
+- User __pi__ has sudo privileges
 
 ## Installation on Raspberry Pi (Stretch or Buster)
 
@@ -71,6 +71,8 @@ __ssh-hamwan__ differs from a typical OpenSSH installation in the following ways
 
 - Enable the service
 
+	This will start `sshd-hamwan` automatically when the Pi boots.
+
 	- Run these commands in the Terminal:
 	
 			sudo systemctl enable ssh-hamwan.service
@@ -90,9 +92,15 @@ __ssh-hamwan__ differs from a typical OpenSSH installation in the following ways
 		tcp    LISTEN   0      128    :::22               :::*             users:(("sshd",pid=596,fd=4))
 		tcp    LISTEN   0      128    :::222              :::*             users:(("sshd-hamwan",pid=580,fd=4))
 		
-	Note that the regular SSH service __sshd__ is listening on port 22 and the __sshd-hamwan__ service is listening on port 222.
+	Note that the regular SSH service __sshd__ is listening on port 22 (not all hosts run an SSH server) and the __sshd-hamwan__ service is listening on port 222.
 	
 - Modify your firewall rules if necessary to allow TCP port 222 inbound.
+
+- Disable the service
+	- Run these commands in the Terminal:
+	
+			sudo systemctl stop ssh-hamwan.service
+			sudo systemctl disable ssh-hamwan.service
 
 ## Client Operation
 
@@ -121,7 +129,7 @@ and follow the instructions.  You can optionally use a passphrase to protect you
 
 This section documents how to configure and build the [openssh-6.8p1](http://anduin.linuxfromscratch.org/~bdubbs/blfs-book-xsl/postlfs/openssh.html) software to allow it to be used over HamWAN without encryption.  You don't need to do these steps if you are simply installing the Debian package in this repository on your Raspberry Pi.  See the previous __Installation on Raspberry Pi (Stretch or Buster)__ section for how to install the Debian package on your Pi.  
 
-The patch modifies various files in the OpenSSH source code to allow no encryption to be used.
+The patch modifies various files in the OpenSSH source code to allow no encryption to be used.  Hosts that are not already running an SSH server will probably require the addition of the sshd user and group as shown below.
 
 - Install required packages and sources
 
