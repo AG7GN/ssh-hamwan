@@ -1,6 +1,5 @@
 # ssh-hamwan
-
-Version 20190819
+Version 20190820
 
 ## Background
 
