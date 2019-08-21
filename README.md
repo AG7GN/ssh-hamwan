@@ -110,6 +110,13 @@ Note that the server must also support "No Encryption" (`NoneEnabled`) in order 
 
 For file transfer, `scp-hamwan` and `sftp-hamwan` work in in the same way.
 
+You can generate your own private and public keys for use with ssh-hamwan.  Open a Terminal and run these commands:
+
+	cd ~/.ssh
+	ssh-keygen-hamwan -t ed25519
+
+and follow the instructions.  You can optionally use a passphrase to protect your private key (recommended).  If you use a passphrase, you'll be prompted to enter it whenever ssh-hamwan needs to use your key.
+
 ## (Optional) Compling and Building ssh-hamwan from Source
 
 This section documents how to configure and build the [openssh-6.8p1](http://anduin.linuxfromscratch.org/~bdubbs/blfs-book-xsl/postlfs/openssh.html) software to allow it to be used over HamWAN without encryption.  You don't need to do these steps if you are simply installing the Debian package in this repository on your Raspberry Pi.  See the previous __Installation on Raspberry Pi (Stretch or Buster)__ section for how to install the Debian package on your Pi.  
