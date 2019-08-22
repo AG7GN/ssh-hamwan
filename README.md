@@ -1,5 +1,5 @@
 # ssh-hamwan
-Version 20190820
+Version 20190822
 
 ## Background
 
@@ -41,7 +41,8 @@ __ssh-hamwan__ differs from a typical OpenSSH installation in the following ways
 		git clone https://github.com/AG7GN/ssh-hamwan
 		cd ssh-hamwan
 		cd ~/ssh-hamwan
-		sudo dpkg -i ssh-hamwan_6.8p1-9_armhf.deb 
+		sudo dpkg -i ssh-hamwan_6.8p1-9_armhf.deb
+		sudo mkdir -p /var/empty
 
 ### Add and Enable the `ssh-hamwan.service`
 
