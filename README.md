@@ -1,5 +1,5 @@
 # ssh-hamwan
-Version 20190822
+Version 20190823
 
 ## Background
 
@@ -134,7 +134,7 @@ The patch modifies various files in the OpenSSH source code to allow no encrypti
 
 - Install required packages and sources
 
-	- You'll need to enable source repositories.
+	- You'll need to enable source repositories (usually in `/etc/apt/sources.list` for Debian and similar distributions).
 
 	- Open a Terminal and run these commands:
 	
@@ -142,8 +142,7 @@ The patch modifies various files in the OpenSSH source code to allow no encrypti
 			sudo apt-get update
 			sudo apt-get -y install git
 			sudo apt-get -y build-dep openssh
-			sudo groupadd sshd
-			sudo useradd -g sshd -c 'sshd privsep' -d /var/empty -s /bin/false sshd 
+			id sshd >/dev/null 2>&1 && { sudo groupadd sshd; sudo useradd -g sshd -c 'sshd privsep' -d /var/empty -s /bin/false sshd; }
 			rm -rf ssh-hamwan
 			git clone https://github.com/AG7GN/ssh-hamwan
 			cd ssh-hamwan
@@ -152,10 +151,10 @@ The patch modifies various files in the OpenSSH source code to allow no encrypti
 			cd openssh-6.8p1
 			patch -p1 < ../openssh-6.8p1-HamWAN-9.patch
 			./configure --prefix=/usr/local --sysconfdir=/usr/local/etc/ssh-hamwan --with-pam --with-pid-dir=/var/run --with-privsep-path=/var/empty --without-openssl
-			make -j8
+			make
 			sudo make install
 		
-	- To build the Raspberry Pi Debian package, I ran the following command instead of `sudo make install` in the previous step:
+	- To build the Raspberry Pi package, I ran the following command instead of `sudo make install` in the previous step:
 	
 			sudo checkinstall --pkgname ssh-hamwan --pkgversion 6.8p1 --pkgrelease 9 --pkggroup hamradio --pkgsource http://www.linuxfromscratch.org/blfs/view/7.6/postlfs/openssh.html --maintainer nobody@example.com --provides ssh-hamwan make install
 		
